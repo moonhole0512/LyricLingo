@@ -179,14 +179,23 @@ app.whenReady().then(() => {
     try {
       const { Media } = require('medialink')
       const media = new Media(process.platform)
-      media.on('error', (err: unknown) => {
-        console.error('Non-fatal medialink error caught:', err)
-      })
 
       let activeKey = ''
       let activeGeneration = 0
       let lastPosition = -1
       let lastState = ''
+      let isQuitting = false
+      let restartTimer: NodeJS.Timeout | null = null
+      let isStarting = false
+
+      media.on('error', (err: unknown) => {
+        const msg = String(err || '').trim()
+        if (msg.includes('NullReferenceException') || msg.includes('Unhandled exception')) {
+          console.warn('[MediaLink] Native Windows SMTC session glitch detected (NullReferenceException). Auto-recovery supervisor active.')
+        } else {
+          console.error('Non-fatal medialink error caught:', err)
+        }
+      })
 
       media.on('update', (rawMediaData: any) => {
         const mediaData = normalizeMediaData(rawMediaData)
@@ -251,11 +260,47 @@ app.whenReady().then(() => {
       const fs = require('fs')
       const path = require('path')
       const isE2E = fs.existsSync(path.join(process.cwd(), '.e2e'))
+
+      function startSupervisor() {
+        if (isQuitting || isE2E || isStarting) return
+        isStarting = true
+        void media.start().then(() => {
+          isStarting = false
+          console.log('[MediaLink] Media listener started.')
+          if (media.child) {
+            media.child.on('exit', (code: any, signal: any) => {
+              if (!isQuitting) {
+                console.warn(`[MediaLink] Native helper exited (code: ${code}, signal: ${signal}). Auto-recovering in 1000ms...`)
+                if (restartTimer) clearTimeout(restartTimer)
+                restartTimer = setTimeout(() => {
+                  startSupervisor()
+                }, 1000)
+              }
+            })
+          }
+        }).catch((error: unknown) => {
+          isStarting = false
+          console.error('[MediaLink] Failed to start media listener, retrying in 2000ms:', error)
+          if (!isQuitting) {
+            if (restartTimer) clearTimeout(restartTimer)
+            restartTimer = setTimeout(() => {
+              startSupervisor()
+            }, 2000)
+          }
+        })
+      }
+
       if (!isE2E) {
-        void media.start().then(() => console.log('Media listener started.')).catch((error: unknown) => console.error('Failed to start media listener:', error))
+        startSupervisor()
       } else {
         console.log('Running in E2E mode, skipping media listener start.')
       }
+
+      app.on('before-quit', () => {
+        isQuitting = true
+        if (restartTimer) clearTimeout(restartTimer)
+        try { media.stop() } catch {}
+      })
     } catch (err) {
       console.log('medialink 로드 실패 (E2E 등 특정 환경):', err)
     }
