@@ -3,6 +3,9 @@
   <h1>LyricLingo (리릭링고)</h1>
   <p><strong>음악을 들으며 자연스럽게 배우는 실시간 AI 가사 번역 & 언어 학습 데스크톱 플레이어</strong></p>
 
+<img width="1621" height="1443" alt="image" src="https://github.com/user-attachments/assets/94e36bbe-ab64-45c5-ae79-1e7e98ae84ff" />
+
+
   <p>
     <img src="https://img.shields.io/badge/Electron-39-47848F?logo=electron&logoColor=white" alt="Electron" />
     <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React" />
