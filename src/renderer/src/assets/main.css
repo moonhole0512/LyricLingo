@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.flashcard-word {
+  @apply text-2xl font-bold mb-4 text-center;
+}
+
+/* Custom Text Selection for Lyrics */
+.lyric-line span::selection {
+  background-color: #ffe4e6; /* bg-rose-100 */
+  color: #e11d48; /* text-rose-600 */
+}
+.lyric-line span::-moz-selection {
+  background-color: #ffe4e6;
+  color: #e11d48;
+}
+
+/* Lyric Animations */
+.lyric-line {
+  transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+  transform-origin: left center;
+  will-change: transform, opacity, color;
+}
+
+.lyric-active {
+  color: #111827; /* gray-900 */
+  transform: scale(1.05);
+  opacity: 1;
+  text-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.lyric-passed {
+  color: #6b7280; /* gray-500 */
+  transform: scale(0.95);
+  opacity: 0.4;
+}
+
+.lyric-future {
+  color: #9ca3af; /* gray-400 */
+  transform: scale(0.98);
+  opacity: 0.6;
+}
+
+/* Skeleton animation */
+.skeleton-lyric {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.mask-image-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, black 32px, black calc(100% - 60px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0px, black 32px, black calc(100% - 60px), transparent 100%);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+
+/* Custom Webkit Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.2);
+}

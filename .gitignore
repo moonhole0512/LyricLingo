@@ -1,0 +1,91 @@
+# ==========================================
+# LyricLingo .gitignore
+# ==========================================
+
+# 1. Dependencies & Package Managers
+node_modules/
+.pnp
+.pnp.js
+
+# 2. Build & Distribution Outputs
+dist/
+out/
+release/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.tsbuildinfo
+.eslintcache
+.parcel-cache/
+
+# (Note: build/ contains application icons and packaging resources for electron-builder, do NOT ignore build/)
+
+# 3. Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# 4. Databases & SQLite Runtime Data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+lyriclingo.db
+
+# 5. Logs
+logs/
+*.log
+*.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 6. Local Testing & Sandboxes (AGENTS.md conventions)
+_testcode/temp/
+_testcode/debug/
+test-results/
+playwright-report/
+blob-report/
+coverage/
+.nyc_output/
+.e2e/
+
+# 7. Local Cache & Deep Learning weights (Portability rule)
+.cache/
+weights/
+
+# 8. Python Virtual Environments (if applicable)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 9. IDE & Editor Configurations
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+
+# 10. OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+[Tt]humbs.db
+[Ee]hthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
