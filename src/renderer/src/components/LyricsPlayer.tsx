@@ -54,6 +54,7 @@ export default function LyricsPlayer({
   const dragJustOccurred = useRef(false)
   const lastSongTitleArtist = useRef('')
   const attemptedAutoFetchKey = useRef('')
+  const translationIdRef = useRef<number>(0)
 
   const getSelectedTextExcludingRuby = () => {
     const sel = window.getSelection();
@@ -113,20 +114,18 @@ export default function LyricsPlayer({
       // @ts-ignore
       if (window.api && window.api.tokenizeJapanese) {
         Promise.allSettled(parsed.map(async (line, i) => {
+          if (tokenizationGeneration.current !== generation || tokenizationSongKey.current !== songKey) return
           // @ts-ignore
           const tokens = await window.api.tokenizeJapanese({
             text: line.text,
             script: displaySettings?.furiganaScript || 'hiragana'
           })
-          return { index: i, tokens }
-        })).then(results => {
-          if (generation !== tokenizationGeneration.current || songKey !== tokenizationSongKey.current) return
-          const newMap: Record<number, { segment: string, furiganaHtml: string }[]> = {}
-          results.forEach(result => {
-            if (result.status === 'fulfilled') newMap[result.value.index] = result.value.tokens
-          })
-          setTokenizedLyrics(newMap)
-        })
+          if (tokenizationGeneration.current !== generation || tokenizationSongKey.current !== songKey) return
+          setTokenizedLyrics(prev => ({
+            ...prev,
+            [i]: tokens
+          }))
+        }))
       }
 
       if (songInfo.translatedLrc) {
@@ -146,6 +145,13 @@ export default function LyricsPlayer({
   useEffect(() => {
     const key = `${songInfo?.title || ''}|${songInfo?.artist || ''}`;
     if (lastSongTitleArtist.current && lastSongTitleArtist.current !== key) {
+      translationIdRef.current += 1;
+      setIsTranslating(false);
+      // @ts-ignore
+      if (window.api && window.api.offTranslationProgress) {
+        // @ts-ignore
+        window.api.offTranslationProgress();
+      }
       setLiveElapsedSeconds('');
       setLiveTps('');
       setLivePromptTokens(0);
@@ -153,9 +159,14 @@ export default function LyricsPlayer({
       setLiveTotalTokens(0);
       setLiveTranslationText('');
       setLyricsNotFound(false);
+      if (!songInfo?.lrc) {
+        setLyrics([]);
+        setTranslatedLyrics([]);
+        setTokenizedLyrics({});
+      }
     }
     lastSongTitleArtist.current = key;
-  }, [songInfo?.title, songInfo?.artist])
+  }, [songInfo?.title, songInfo?.artist, songInfo?.lrc])
 
   // Auto-fetch lyrics when entering the empty state (only once per song)
   useEffect(() => {
@@ -256,8 +267,6 @@ export default function LyricsPlayer({
     }, 100);
   }
 
-  const translationIdRef = useRef<number>(0);
-
   const handleSyncClick = async (force: boolean = false, overrideLrc?: string) => {
     if (!songInfo) return
     const currentId = ++translationIdRef.current;
@@ -294,6 +303,8 @@ export default function LyricsPlayer({
       }
     }
 
+    if (translationIdRef.current !== currentId) return;
+
     setIsTranslating(true)
     setLyricsNotFound(false)
     setLiveTranslationText('')
@@ -328,6 +339,9 @@ export default function LyricsPlayer({
       const durSec = getDurationSec()
       // @ts-ignore
       const originalLrc = overrideLrc || songInfo.lrc || await window.api.fetchLrcManual({ title: songInfo.title, artist: songInfo.artist, duration: durSec })
+      
+      if (translationIdRef.current !== currentId) return;
+
       if (!originalLrc || originalLrc.includes('온라인에서 가사를 찾을 수 없습니다')) {
         if (translationIdRef.current === currentId) {
           setIsTranslating(false);
@@ -347,6 +361,8 @@ export default function LyricsPlayer({
         });
       }
       
+      if (translationIdRef.current !== currentId) return;
+
       // 번역 진행
       // @ts-ignore
       const res = await window.api.translateLyrics({ 
@@ -357,6 +373,8 @@ export default function LyricsPlayer({
         cover: songInfo.cover,
         targetLanguage: displaySettings?.targetLanguage || 'Korean'
       });
+
+      if (translationIdRef.current !== currentId) return;
       
       const translatedLrc = typeof res === 'string' ? res : res.translated;
       const translatedModel = typeof res === 'object' ? res.model : selectedModel;

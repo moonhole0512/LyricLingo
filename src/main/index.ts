@@ -9,7 +9,7 @@ import { isUntranslated } from './utils/lrcAligner';
 import { cleanLyricText, areLyricsEquivalent } from './utils/lyricsParser';
 import { normalizeMediaData, mediaKey } from './utils/mediaIdentity'
 import { MediaControlWorker, type MediaAction } from './utils/mediaControl'
-import { searchLrcCandidates } from './utils/lrcSearcher'
+import { searchLrcCandidates, isTitleArtistMatch } from './utils/lrcSearcher'
 import { postProcessJapaneseTokens } from './utils/japaneseLyricsDictionary'
 import type { VocabularyInput } from '../shared/types'
 
@@ -184,7 +184,22 @@ app.whenReady().then(() => {
   let cachedModelInfo: any = null;
   let lastMediaData: any = null;
 
-  function broadcastMusicUpdate(lrc: string | null, translatedLrc: string | null, translatedModel: string | null = null, translatedModelInfo: any = null) {
+  function broadcastMusicUpdate(
+    lrc: string | null,
+    translatedLrc: string | null,
+    translatedModel: string | null = null,
+    translatedModelInfo: any = null,
+    targetTitle?: string,
+    targetArtist?: string
+  ) {
+    if (targetTitle && lastMediaData) {
+      const titleMatches = isTitleArtistMatch(lastMediaData.title, targetTitle);
+      const artistMatches = !targetArtist || isTitleArtistMatch(lastMediaData.artist, targetArtist);
+      if (!titleMatches || !artistMatches) {
+        console.log(`\x1b[33m[broadcastMusicUpdate]\x1b[0m Ignored stale update for "${targetTitle}" (current track: "${lastMediaData.title}")`);
+        return;
+      }
+    }
     cachedLrc = lrc;
     cachedTranslated = translatedLrc;
     cachedModel = translatedModel;
@@ -257,10 +272,23 @@ app.whenReady().then(() => {
           lastPosition = mediaData.position
           lastState = mediaData.state
 
+          // Immediately notify renderer that track changed so UI switches without waiting
+          if (wins.length) {
+            wins[0].webContents.send('music-update', {
+              ...mediaData,
+              lrc: null,
+              translatedLrc: null,
+              translatedModel: null,
+              translatedModelInfo: null,
+              isLoading: true,
+              timestamp: Date.now()
+            });
+          }
+
           void getLyricsFromCache(mediaData.title, mediaData.artist).then((row) => {
             if (generation !== activeGeneration || activeKey !== key) return
             const modelInfo = row?.translated_model_info ? JSON.parse(row.translated_model_info) : null;
-            broadcastMusicUpdate(row?.original_lyrics || null, row?.translated_lyrics || null, row?.translated_model || null, modelInfo);
+            broadcastMusicUpdate(row?.original_lyrics || null, row?.translated_lyrics || null, row?.translated_model || null, modelInfo, mediaData.title, mediaData.artist);
           })
           return
         }
@@ -456,7 +484,7 @@ app.whenReady().then(() => {
               'UPDATE lyrics_cache SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
               [matchingRow.id],
               () => {
-                broadcastMusicUpdate(newLyrics, matchingRow.translated_lyrics, matchingRow.translated_model, parsedModelInfo);
+                broadcastMusicUpdate(newLyrics, matchingRow.translated_lyrics, matchingRow.translated_model, parsedModelInfo, cleanTitle, cleanArtist);
                 resolve({
                   success: true,
                   hasCachedTranslation: true,
@@ -469,7 +497,7 @@ app.whenReady().then(() => {
               }
             );
           } else if (matchingRow) {
-            broadcastMusicUpdate(newLyrics, null, null, null);
+            broadcastMusicUpdate(newLyrics, null, null, null, cleanTitle, cleanArtist);
             resolve({
               success: true,
               hasCachedTranslation: false,
@@ -481,7 +509,7 @@ app.whenReady().then(() => {
               'INSERT INTO lyrics_cache (song_title, artist, original_lyrics) VALUES (?, ?, ?)',
               [cleanTitle, cleanArtist, newLyrics],
               () => {
-                broadcastMusicUpdate(newLyrics, null, null, null);
+                broadcastMusicUpdate(newLyrics, null, null, null, cleanTitle, cleanArtist);
                 resolve({
                   success: true,
                   hasCachedTranslation: false,
@@ -538,7 +566,7 @@ app.whenReady().then(() => {
         }
       });
 
-      broadcastMusicUpdate(originalLyrics, translated, translatedModel, parsedModelInfo);
+      broadcastMusicUpdate(originalLyrics, translated, translatedModel, parsedModelInfo, title, artist);
       return { translated, model: translatedModel, modelInfo: parsedModelInfo };
     } catch (e: any) {
       console.error('Translation error:', e);
