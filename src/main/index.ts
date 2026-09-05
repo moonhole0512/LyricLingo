@@ -335,6 +335,10 @@ app.whenReady().then(() => {
   ipcMain.handle('tokenize-japanese', async (_, payload: string | { text: string; script?: 'hiragana' | 'katakana' }) => {
     const text = typeof payload === 'string' ? payload : payload.text;
     const script = typeof payload === 'string' ? 'hiragana' : (payload.script || 'hiragana');
+    // If text does not contain any Japanese characters (hiragana, katakana, kanji), return empty so Intl.Segmenter handles it cleanly
+    if (!/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) {
+      return [];
+    }
     try {
       await getKuroshiro();
       const rawTokens = await kuromojiAnalyzer.parse(text);

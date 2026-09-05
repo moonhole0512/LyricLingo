@@ -51,6 +51,7 @@ export default function LyricsPlayer({
   const tokenizationGeneration = useRef(0)
   const tokenizationSongKey = useRef('')
   const dragStartPos = useRef<{ x: number; y: number; time: number } | null>(null)
+  const dragJustOccurred = useRef(false)
   const lastSongTitleArtist = useRef('')
   const attemptedAutoFetchKey = useRef('')
 
@@ -1132,28 +1133,24 @@ export default function LyricsPlayer({
                 }`}
                 onMouseDown={(e) => {
                   dragStartPos.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+                  dragJustOccurred.current = false;
                 }}
                 onMouseUp={(e) => {
-                  const start = dragStartPos.current;
-                  const dx = start ? Math.abs(e.clientX - start.x) : 0;
-                  const dy = start ? Math.abs(e.clientY - start.y) : 0;
-                  if (dx > 4 || dy > 4) {
-                    const selection = getSelectedTextExcludingRuby();
-                    if (selection) {
-                      e.stopPropagation();
-                      handleLyricClick(line.text, line.timeMs, selection);
-                    }
+                  const selection = getSelectedTextExcludingRuby();
+                  if (selection) {
+                    dragJustOccurred.current = true;
+                    e.stopPropagation();
+                    handleLyricClick(line.text, line.timeMs, selection);
                   }
                 }}
-                onClick={(e) => {
-                  const start = dragStartPos.current;
-                  const dx = start ? Math.abs(e.clientX - start.x) : 0;
-                  const dy = start ? Math.abs(e.clientY - start.y) : 0;
-                  if (dx > 4 || dy > 4) return;
-                  const selection = getSelectedTextExcludingRuby();
-                  if (!selection) {
-                    handleLyricClick(line.text, line.timeMs, line.text.trim() || undefined);
+                onClick={() => {
+                  if (dragJustOccurred.current) {
+                    dragJustOccurred.current = false;
+                    return;
                   }
+                  const selection = getSelectedTextExcludingRuby();
+                  if (selection) return;
+                  handleLyricClick(line.text, line.timeMs, line.text.trim() || undefined);
                 }}
               >
                 <div 
@@ -1166,41 +1163,63 @@ export default function LyricsPlayer({
                       <div className="w-2.5 h-2.5 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                       <div className="w-2.5 h-2.5 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                     </div>
-                  ) : tokenizedLyrics[i] ? (
-                    tokenizedLyrics[i].map((segment, idx) => (
-                      <span 
-                        key={idx} 
-                        className={`transition-colors duration-200 rounded px-[1px] whitespace-pre-wrap ${isActive ? 'hover:bg-rose-100 hover:text-rose-600' : 'hover:bg-gray-100 hover:text-gray-700'}`}
-                        onClick={(e) => {
-                          const start = dragStartPos.current;
-                          const dx = start ? Math.abs(e.clientX - start.x) : 0;
-                          const dy = start ? Math.abs(e.clientY - start.y) : 0;
-                          if (dx > 4 || dy > 4) return;
-                          e.stopPropagation();
-                          window.getSelection()?.removeAllRanges();
-                          handleLyricClick(line.text, line.timeMs, segment.segment);
-                        }}
-                        dangerouslySetInnerHTML={{ __html: segment.furiganaHtml }}
-                      />
-                    ))
+                  ) : (tokenizedLyrics[i] && tokenizedLyrics[i].length > 0) ? (
+                    tokenizedLyrics[i].map((segment, idx) => {
+                      const word = segment.segment?.trim();
+                      const isWord = Boolean(word && word !== '、' && word !== '。' && word !== ',' && word !== '.' && word !== '!' && word !== '?');
+                      return (
+                        <span 
+                          key={idx} 
+                          className={`transition-colors duration-200 rounded px-[1px] whitespace-pre-wrap ${
+                            isWord 
+                              ? `cursor-pointer ${isActive ? 'hover:bg-rose-100 hover:text-rose-600' : 'hover:bg-gray-100 hover:text-gray-700'}` 
+                              : ''
+                          }`}
+                          onClick={(e) => {
+                            if (dragJustOccurred.current) {
+                              dragJustOccurred.current = false;
+                              return;
+                            }
+                            const selection = getSelectedTextExcludingRuby();
+                            if (selection) return;
+                            if (!isWord) return;
+                            e.stopPropagation();
+                            window.getSelection()?.removeAllRanges();
+                            handleLyricClick(line.text, line.timeMs, word);
+                          }}
+                          dangerouslySetInnerHTML={{ __html: segment.furiganaHtml }}
+                        />
+                      );
+                    })
                   ) : (
-                    Array.from(segmenter.segment(line.text)).map((segment, idx) => (
-                      <span 
-                        key={idx} 
-                        className={`transition-colors duration-200 rounded px-[1px] whitespace-pre-wrap ${isActive ? 'hover:bg-rose-100 hover:text-rose-600' : 'hover:bg-gray-100 hover:text-gray-700'}`}
-                        onClick={(e) => {
-                          const start = dragStartPos.current;
-                          const dx = start ? Math.abs(e.clientX - start.x) : 0;
-                          const dy = start ? Math.abs(e.clientY - start.y) : 0;
-                          if (dx > 4 || dy > 4) return;
-                          e.stopPropagation();
-                          window.getSelection()?.removeAllRanges();
-                          handleLyricClick(line.text, line.timeMs, segment.segment);
-                        }}
-                      >
-                        {segment.segment}
-                      </span>
-                    ))
+                    Array.from(segmenter.segment(line.text)).map((segment, idx) => {
+                      const word = segment.segment?.trim();
+                      const isWord = Boolean(word && segment.isWordLike);
+                      return (
+                        <span 
+                          key={idx} 
+                          className={`transition-colors duration-200 rounded px-[1px] whitespace-pre-wrap ${
+                            isWord 
+                              ? `cursor-pointer ${isActive ? 'hover:bg-rose-100 hover:text-rose-600' : 'hover:bg-gray-100 hover:text-gray-700'}` 
+                              : ''
+                          }`}
+                          onClick={(e) => {
+                            if (dragJustOccurred.current) {
+                              dragJustOccurred.current = false;
+                              return;
+                            }
+                            const selection = getSelectedTextExcludingRuby();
+                            if (selection) return;
+                            if (!isWord) return;
+                            e.stopPropagation();
+                            window.getSelection()?.removeAllRanges();
+                            handleLyricClick(line.text, line.timeMs, word);
+                          }}
+                        >
+                          {segment.segment}
+                        </span>
+                      );
+                    })
                   )}
                 </div>
                 {/* Translation or Skeleton */}
