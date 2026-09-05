@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: lyriclingo
+appId: com.lyriclingo.app
+productName: LyricLingo
 directories:
   buildResources: build
 files:
@@ -12,9 +12,16 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: lyriclingo
+  executableName: LyricLingo
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: ${productName}-Setup-${version}.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
