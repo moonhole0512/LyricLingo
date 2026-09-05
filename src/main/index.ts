@@ -643,6 +643,16 @@ app.whenReady().then(() => {
     });
   });
 
+  ipcMain.handle('clear-lyrics-history', async () => {
+    const db = getDb();
+    return new Promise((resolve, reject) => {
+      db.run('DELETE FROM lyrics_cache', function(err) {
+        if (err) reject(err);
+        else resolve(this.changes);
+      });
+    });
+  });
+
   ipcMain.on('open-apple-music', () => {
     // Windows 11 Apple Music 앱의 AppUserModelId를 이용해 직접 실행
     require('child_process').exec('explorer.exe shell:AppsFolder\\AppleInc.AppleMusicWin_nzyj5cx40ttqa!App');

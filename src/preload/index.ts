@@ -42,6 +42,7 @@ const api = {
   searchAppleMusic: (term: string) => ipcRenderer.send('search-apple-music', term),
   getLyricsHistory: () => ipcRenderer.invoke('get-lyrics-history'),
   deleteLyricsHistory: (id: number) => ipcRenderer.invoke('delete-lyrics-history', id),
+  clearLyricsHistory: () => ipcRenderer.invoke('clear-lyrics-history'),
   refreshAiModels: () => ipcRenderer.invoke('refresh-ai-models'),
   setAIProvider: (provider: string) => ipcRenderer.invoke('set-ai-provider', provider),
   onTranslationProgress: (callback: (data: any) => void) => {
