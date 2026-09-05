@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { parseLyrics, ParsedLyric, extractLrcDurationMs, calculateSmartSyncOffset } from '../../../../src/main/utils/lyricsParser'
+import { parseLyrics, ParsedLyric, extractLrcDurationMs, calculateSmartSyncOffset, areLyricsEquivalent } from '../../../../src/main/utils/lyricsParser'
 import TutorSidebar from './TutorSidebar'
 import type { DisplaySettings } from '../../../shared/types'
 import { SkipBack, Play, Pause, SkipForward, ExternalLink, AlertTriangle, FileQuestion, Search } from 'lucide-react'
@@ -216,12 +216,44 @@ export default function LyricsPlayer({
       const ss = Math.floor(duration % 60);
       newLyrics = `[length: ${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}]\n` + newLyrics;
     }
-    await (window as any).api.updateOriginalLyrics({ title: songInfo.title, artist: songInfo.artist, newLyrics })
-    setSongInfo((prev: any) => prev ? { ...prev, lrc: newLyrics, translatedLrc: null, translatedModel: null, translatedModelInfo: null } : prev)
-    setShowVersionsModal(false)
+
+    const isCurrent = Boolean(songInfo?.lrc && areLyricsEquivalent(newLyrics, songInfo.lrc));
+    if (isCurrent && songInfo.translatedLrc) {
+      setShowVersionsModal(false);
+      return;
+    }
+
+    setShowVersionsModal(false);
+
+    const result = await (window as any).api.updateOriginalLyrics({
+      title: songInfo.title,
+      artist: songInfo.artist,
+      newLyrics
+    });
+
+    if (result && result.hasCachedTranslation && result.translatedLyrics) {
+      setSongInfo((prev: any) => prev ? {
+        ...prev,
+        lrc: newLyrics,
+        translatedLrc: result.translatedLyrics,
+        translatedModel: result.translatedModel || prev?.translatedModel,
+        translatedModelInfo: result.translatedModelInfo || prev?.translatedModelInfo
+      } : prev);
+      setLyricsNotFound(false);
+      return;
+    }
+
+    setSongInfo((prev: any) => prev ? {
+      ...prev,
+      lrc: newLyrics,
+      translatedLrc: null,
+      translatedModel: null,
+      translatedModelInfo: null
+    } : prev);
+
     setTimeout(() => {
-      handleSyncClick(true, newLyrics)
-    }, 100)
+      handleSyncClick(false, newLyrics);
+    }, 100);
   }
 
   const translationIdRef = useRef<number>(0);
@@ -237,7 +269,11 @@ export default function LyricsPlayer({
         // @ts-ignore
         if (window.api && window.api.getLyricsCache) {
           // @ts-ignore
-          const cached = await window.api.getLyricsCache({ title: songInfo.title, artist: songInfo.artist });
+          const cached = await window.api.getLyricsCache({
+            title: songInfo.title,
+            artist: songInfo.artist,
+            originalLyrics: overrideLrc || songInfo.lrc
+          });
           if (cached && cached.lrc && cached.translatedLrc) {
             if (translationIdRef.current === currentId) {
               setLyricsNotFound(false);
@@ -539,27 +575,52 @@ export default function LyricsPlayer({
                 다른 버전의 가사를 찾을 수 없습니다.
               </div>
             ) : (
-              lrcVersions.map((v, i) => (
-                <div 
-                  key={i}
-                  onClick={() => handleSelectVersion(v.syncedLyrics, v.duration)}
-                  className="p-4 rounded-xl border border-gray-100 hover:border-rose-200 hover:bg-rose-50/30 cursor-pointer transition-all flex flex-col space-y-2 group"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold text-gray-900 group-hover:text-rose-600 transition-colors">{v.trackName}</div>
-                      <div className="text-sm text-gray-500">{v.artistName}</div>
+              lrcVersions.map((v, i) => {
+                const isCurrent = Boolean(songInfo?.lrc && areLyricsEquivalent(v.syncedLyrics, songInfo.lrc));
+                return (
+                  <div 
+                    key={i}
+                    onClick={() => handleSelectVersion(v.syncedLyrics, v.duration)}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col space-y-2 group ${
+                      isCurrent 
+                        ? 'border-rose-400 bg-rose-50/60 ring-2 ring-rose-200/50 shadow-sm' 
+                        : 'border-gray-100 hover:border-rose-200 hover:bg-rose-50/30'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold transition-colors ${isCurrent ? 'text-rose-700' : 'text-gray-900 group-hover:text-rose-600'}`}>
+                            {v.trackName}
+                          </span>
+                          {isCurrent && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full border border-rose-200/60">
+                              <svg className="w-3 h-3 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                              현재 적용 중
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-500">{v.artistName}</div>
+                      </div>
+                      <div className={`text-xs font-mono px-2 py-1 rounded text-right shrink-0 ${
+                        isCurrent ? 'bg-rose-100 text-rose-700 font-medium' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {formatTime(v.duration * 1000)}
+                      </div>
                     </div>
-                    <div className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded text-right shrink-0">
-                      {formatTime(v.duration * 1000)}
+                    <div className={`text-sm p-3 rounded-lg border font-medium mt-2 whitespace-pre-line ${
+                      isCurrent 
+                        ? 'text-rose-900/80 bg-white/80 border-rose-100' 
+                        : 'text-gray-600 bg-gray-50 border-gray-100'
+                    }`}>
+                      {v.syncedLyrics.split('\n').slice(0, 3).join('\n').replace(/\[\d{2}:\d{2}\.\d{2}\]/g, '')}
+                      {v.syncedLyrics.split('\n').length > 3 ? '\n...' : ''}
                     </div>
                   </div>
-                  <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100 font-medium mt-2 whitespace-pre-line">
-                    {v.syncedLyrics.split('\n').slice(0, 3).join('\n').replace(/\[\d{2}:\d{2}\.\d{2}\]/g, '')}
-                    {v.syncedLyrics.split('\n').length > 3 ? '\n...' : ''}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

@@ -32,7 +32,7 @@ const api = {
     return () => ipcRenderer.removeListener('ai-status', listener)
   },
   getAIStatus: () => ipcRenderer.invoke('get-ai-status'),
-  getLyricsCache: (data: { title: string, artist: string }) => ipcRenderer.invoke('get-lyrics-cache', data),
+  getLyricsCache: (data: { title: string, artist: string, originalLyrics?: string }) => ipcRenderer.invoke('get-lyrics-cache', data),
   fetchLrcManual: (data: { title: string, artist?: string, duration?: number }) => ipcRenderer.invoke('fetch-lrc-manual', data),
   translateLyrics: (data: { originalLyrics: string, model: string, title: string, artist: string }) => ipcRenderer.invoke('translate-lyrics', data),
   tutorExplanation: (data: { lyricContext: string, wordOrSentence: string, model: string }) => ipcRenderer.invoke('tutor-explanation', data),

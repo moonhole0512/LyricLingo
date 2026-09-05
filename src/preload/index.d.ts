@@ -15,7 +15,7 @@ declare global {
       clearVocabulary: () => Promise<number>
       deleteVocabularyItem: (id: number) => Promise<number>
       deleteVocabulary: (id: number) => Promise<number>
-      getLyricsCache: (data: { title: string, artist: string }) => Promise<{ lrc: string | null, translatedLrc: string | null, cover: string | null, translatedModel?: string | null, translatedModelInfo?: any | null } | null>
+      getLyricsCache: (data: { title: string, artist: string, originalLyrics?: string }) => Promise<{ lrc: string | null, translatedLrc: string | null, cover: string | null, translatedModel?: string | null, translatedModelInfo?: any | null } | null>
       mediaControl: (action: 'playpause' | 'next' | 'prev') => Promise<{ ok: boolean, reason: string }>
       [key: string]: any
     }

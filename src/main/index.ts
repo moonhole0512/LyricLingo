@@ -6,7 +6,7 @@ import { getDb } from './database/db'
 import { addVocabulary, clearVocabulary, deleteVocabulary, getVocabulary, getVocabularyStats, reviewVocabulary, updateVocabulary } from './database/vocabulary'
 import { analyzeVocabularyWord, startAIPolling, translateLyrics, getTutorExplanation } from './ai';
 import { isUntranslated } from './utils/lrcAligner';
-import { cleanLyricText } from './utils/lyricsParser';
+import { cleanLyricText, areLyricsEquivalent } from './utils/lyricsParser';
 import { normalizeMediaData, mediaKey } from './utils/mediaIdentity'
 import { MediaControlWorker, type MediaAction } from './utils/mediaControl'
 import { searchLrcCandidates } from './utils/lrcSearcher'
@@ -29,7 +29,7 @@ function getKuroshiro() {
   return kuroshiroInit;
 }
 
-async function getLyricsFromCache(title: string, artist: string): Promise<any> {
+async function getLyricsFromCache(title: string, artist: string, targetLyrics?: string): Promise<any> {
   const db = getDb();
   return new Promise((resolve) => {
     if (!title) return resolve(null);
@@ -61,24 +61,52 @@ async function getLyricsFromCache(title: string, artist: string): Promise<any> {
       return row;
     };
 
-    db.get(
-      `SELECT original_lyrics, translated_lyrics, cover, translated_model, translated_model_info FROM lyrics_cache 
+    db.all(
+      `SELECT id, original_lyrics, translated_lyrics, cover, translated_model, translated_model_info FROM lyrics_cache 
        WHERE song_title = ? COLLATE NOCASE 
        AND (artist = ? COLLATE NOCASE OR artist IS NULL OR artist = '' OR ? = '')
-       ORDER BY (CASE WHEN artist = ? COLLATE NOCASE THEN 0 ELSE 1 END), id DESC LIMIT 1`,
+       ORDER BY (CASE WHEN artist = ? COLLATE NOCASE THEN 0 ELSE 1 END), 
+                (CASE WHEN translated_lyrics IS NOT NULL AND translated_lyrics != '' THEN 0 ELSE 1 END),
+                id DESC`,
       [cleanTitle, cleanArtist, cleanArtist, cleanArtist],
-      (_err, row: any) => {
-        const processed = processRow(row);
-        if (processed) {
-          resolve(processed);
-        } else if (!cleanArtist) {
-          db.get(
-            `SELECT original_lyrics, translated_lyrics, cover, translated_model, translated_model_info FROM lyrics_cache 
+      (_err, rows: any[]) => {
+        if (rows && rows.length > 0) {
+          if (targetLyrics) {
+            const match = rows.find((r) => areLyricsEquivalent(r.original_lyrics, targetLyrics));
+            if (match) {
+              const processed = processRow(match);
+              if (processed) return resolve(processed);
+            }
+          } else {
+            for (const r of rows) {
+              const processed = processRow(r);
+              if (processed) return resolve(processed);
+            }
+          }
+        }
+
+        if (!cleanArtist) {
+          db.all(
+            `SELECT id, original_lyrics, translated_lyrics, cover, translated_model, translated_model_info FROM lyrics_cache 
              WHERE song_title = ? COLLATE NOCASE 
-             ORDER BY id DESC LIMIT 1`,
+             ORDER BY (CASE WHEN translated_lyrics IS NOT NULL AND translated_lyrics != '' THEN 0 ELSE 1 END), id DESC`,
             [cleanTitle],
-            (_err2, row2: any) => {
-              resolve(processRow(row2));
+            (_err2, rows2: any[]) => {
+              if (rows2 && rows2.length > 0) {
+                if (targetLyrics) {
+                  const match = rows2.find((r) => areLyricsEquivalent(r.original_lyrics, targetLyrics));
+                  if (match) {
+                    const processed = processRow(match);
+                    if (processed) return resolve(processed);
+                  }
+                } else {
+                  for (const r of rows2) {
+                    const processed = processRow(r);
+                    if (processed) return resolve(processed);
+                  }
+                }
+              }
+              resolve(null);
             }
           );
         } else {
@@ -315,8 +343,8 @@ app.whenReady().then(() => {
   })
   app.on('before-quit', () => mediaControlWorker.dispose())
 
-  ipcMain.handle('get-lyrics-cache', async (_, { title, artist }) => {
-    const cached = await getLyricsFromCache(title, artist);
+  ipcMain.handle('get-lyrics-cache', async (_, { title, artist, originalLyrics }: { title: string; artist: string; originalLyrics?: string }) => {
+    const cached = await getLyricsFromCache(title, artist, originalLyrics);
     if (cached) {
       return {
         lrc: cached.original_lyrics || null,
@@ -408,29 +436,63 @@ app.whenReady().then(() => {
   ipcMain.handle('update-original-lyrics', async (_, { title, artist, newLyrics }) => {
     return new Promise((resolve) => {
       const db = getDb();
-      const artistCondition = artist ? 'AND artist = ? COLLATE NOCASE' : 'AND (artist IS NULL OR artist = "")';
-      const checkParams = artist ? [title, artist] : [title];
+      const cleanTitle = (title || '').trim();
+      const cleanArtist = (artist || '').trim();
+      const artistCondition = cleanArtist ? 'AND artist = ? COLLATE NOCASE' : 'AND (artist IS NULL OR artist = "")';
+      const checkParams = cleanArtist ? [cleanTitle, cleanArtist] : [cleanTitle];
 
-      const finishUpdate = () => {
-        broadcastMusicUpdate(newLyrics, null, null, null);
-        resolve(true);
-      };
-
-      db.get(`SELECT id FROM lyrics_cache WHERE song_title = ? COLLATE NOCASE ${artistCondition}`, checkParams, (_, row: any) => {
-        if (row) {
-          db.run(
-            'UPDATE lyrics_cache SET original_lyrics = ?, translated_lyrics = NULL, translated_model = NULL, translated_model_info = NULL WHERE id = ?',
-            [newLyrics, row.id],
-            finishUpdate
-          );
-        } else {
-          db.run(
-            'INSERT INTO lyrics_cache (song_title, artist, original_lyrics) VALUES (?, ?, ?)',
-            [title, artist || '', newLyrics],
-            finishUpdate
-          );
+      db.all(
+        `SELECT id, original_lyrics, translated_lyrics, cover, translated_model, translated_model_info 
+         FROM lyrics_cache 
+         WHERE song_title = ? COLLATE NOCASE ${artistCondition}
+         ORDER BY id DESC`,
+        checkParams,
+        (_, rows: any[]) => {
+          const matchingRow = rows?.find((r) => areLyricsEquivalent(r.original_lyrics, newLyrics));
+          if (matchingRow && matchingRow.translated_lyrics) {
+            console.log(`\x1b[32m[Cache Hit]\x1b[0m Found existing translation in cache for selected version of "${cleanTitle}"`);
+            const parsedModelInfo = matchingRow.translated_model_info ? JSON.parse(matchingRow.translated_model_info) : null;
+            db.run(
+              'UPDATE lyrics_cache SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [matchingRow.id],
+              () => {
+                broadcastMusicUpdate(newLyrics, matchingRow.translated_lyrics, matchingRow.translated_model, parsedModelInfo);
+                resolve({
+                  success: true,
+                  hasCachedTranslation: true,
+                  originalLyrics: matchingRow.original_lyrics,
+                  translatedLyrics: matchingRow.translated_lyrics,
+                  cover: matchingRow.cover,
+                  translatedModel: matchingRow.translated_model,
+                  translatedModelInfo: parsedModelInfo
+                });
+              }
+            );
+          } else if (matchingRow) {
+            broadcastMusicUpdate(newLyrics, null, null, null);
+            resolve({
+              success: true,
+              hasCachedTranslation: false,
+              originalLyrics: matchingRow.original_lyrics,
+              translatedLyrics: null
+            });
+          } else {
+            db.run(
+              'INSERT INTO lyrics_cache (song_title, artist, original_lyrics) VALUES (?, ?, ?)',
+              [cleanTitle, cleanArtist, newLyrics],
+              () => {
+                broadcastMusicUpdate(newLyrics, null, null, null);
+                resolve({
+                  success: true,
+                  hasCachedTranslation: false,
+                  originalLyrics: newLyrics,
+                  translatedLyrics: null
+                });
+              }
+            );
+          }
         }
-      });
+      );
     });
   });
 
@@ -460,18 +522,19 @@ app.whenReady().then(() => {
       const artistCondition = artist ? 'AND artist = ? COLLATE NOCASE' : 'AND (artist IS NULL OR artist = "")';
       const checkParams = artist ? [title, artist] : [title];
 
-      db.get(`SELECT id FROM lyrics_cache WHERE song_title = ? COLLATE NOCASE ${artistCondition}`, checkParams, (_, row: any) => {
-        if (row) {
+      db.all(`SELECT id, original_lyrics FROM lyrics_cache WHERE song_title = ? COLLATE NOCASE ${artistCondition}`, checkParams, (_, rows: any[]) => {
+        const matchingRow = rows?.find((r) => areLyricsEquivalent(r.original_lyrics, originalLyrics));
+        if (matchingRow) {
           db.run(`
             UPDATE lyrics_cache 
-            SET original_lyrics = ?, translated_lyrics = ?, cover = ?, translated_model = ?, translated_model_info = ? 
+            SET original_lyrics = ?, translated_lyrics = ?, cover = ?, translated_model = ?, translated_model_info = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE id = ?
-          `, [originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr, row.id]);
+          `, [originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr, matchingRow.id]);
         } else {
           db.run(`
             INSERT INTO lyrics_cache (song_title, artist, original_lyrics, translated_lyrics, cover, translated_model, translated_model_info) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `, [title, artist, originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr]);
+          `, [title, artist || '', originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr]);
         }
       });
 

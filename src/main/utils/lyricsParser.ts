@@ -121,3 +121,27 @@ export function calculateSmartSyncOffset(
     };
   }
 }
+
+export function normalizeLrcForComparison(lrc: string): string {
+  if (!lrc) return '';
+  return lrc
+    .replace(/^\[[a-zA-Z]+:[^\]]*\]\s*/gm, '') // remove metadata tags like [length: ...], [ar: ...], [al: ...]
+    .replace(/\[(\d{2}:\d{2})(?:\.(\d{1,3}))?\]/g, (_, mmss, ms) => {
+      const centi = (ms || '00').slice(0, 2).padEnd(2, '0');
+      return `[${mmss}.${centi}]`;
+    })
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function areLyricsEquivalent(lrcA?: string | null, lrcB?: string | null): boolean {
+  if (!lrcA || !lrcB) return false;
+  if (lrcA === lrcB) return true;
+  const normA = normalizeLrcForComparison(lrcA);
+  const normB = normalizeLrcForComparison(lrcB);
+  if (!normA || !normB) return false;
+  return normA === normB;
+}
