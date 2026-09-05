@@ -1,6 +1,7 @@
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import { areLyricsEquivalent } from './lyricsParser';
 
 function appendDebugLog(message: string) {
   try {
@@ -196,9 +197,16 @@ export async function searchLrcCandidates(searchTitle: string, searchArtist?: st
     // If an artist was provided, strictly return matches that match the artist.
     // Unrelated artists must never be returned or auto-selected as lyrics.
     const rankedStrict = rankLrcCandidates(strictMatches, targetDuration);
-    const finalCandidates = validArtists.length > 0
-      ? rankedStrict
-      : rankLrcCandidates(titleOnlyMatches, targetDuration);
+    const rankedTitleOnly = rankLrcCandidates(titleOnlyMatches, targetDuration);
+    const candidatesToDedupe = validArtists.length > 0 ? rankedStrict : rankedTitleOnly;
+
+    // Deduplicate candidates that have equivalent lyrics (keeping the highest-ranked one)
+    const finalCandidates: any[] = [];
+    for (const item of candidatesToDedupe) {
+      if (!finalCandidates.some((existing) => areLyricsEquivalent(existing.syncedLyrics, item.syncedLyrics))) {
+        finalCandidates.push(item);
+      }
+    }
 
     logLrcDebug('LRC Search Complete', `Total candidates: ${finalCandidates.length}. Best match: "${finalCandidates[0]?.trackName || 'None'}" by "${finalCandidates[0]?.artistName || 'None'}"`);
 

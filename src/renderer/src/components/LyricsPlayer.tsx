@@ -574,9 +574,12 @@ export default function LyricsPlayer({
               <div className="text-center py-12 text-gray-500">
                 다른 버전의 가사를 찾을 수 없습니다.
               </div>
-            ) : (
-              lrcVersions.map((v, i) => {
-                const isCurrent = Boolean(songInfo?.lrc && areLyricsEquivalent(v.syncedLyrics, songInfo.lrc));
+            ) : (() => {
+              const currentVersionIndex = songInfo?.lrc
+                ? lrcVersions.findIndex((v) => areLyricsEquivalent(v.syncedLyrics, songInfo.lrc))
+                : -1;
+              return lrcVersions.map((v, i) => {
+                const isCurrent = i === currentVersionIndex;
                 return (
                   <div 
                     key={i}
@@ -620,8 +623,8 @@ export default function LyricsPlayer({
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
       </div>

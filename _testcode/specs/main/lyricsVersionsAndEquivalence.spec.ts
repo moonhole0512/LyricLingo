@@ -140,5 +140,41 @@ describe('Lyric Version Equivalence & Cache Reuse Verification', () => {
       expect(result.hasCachedTranslation).toBe(true);
       expect(result.translatedLyrics).toBe(trans);
     });
+
+    it('should guarantee that only ONE candidate is marked as current even if multiple identical versions exist', () => {
+      const activeLrc = '[00:01.00] Line 1\n[00:05.00] Line 2';
+      const candidate1 = { id: 101, trackName: 'Song A', syncedLyrics: '[00:01.00] Line 1\n[00:05.00] Line 2' };
+      const candidate2 = { id: 102, trackName: 'Song A (Dup)', syncedLyrics: '[length: 03:00]\n[00:01.000] Line 1\r\n[00:05.000] Line 2' };
+      const candidate3 = { id: 103, trackName: 'Song A (Diff)', syncedLyrics: '[00:01.00] Completely different' };
+
+      const lrcVersions = [candidate1, candidate2, candidate3];
+
+      // Logic used in renderVersionsModal
+      const currentVersionIndex = lrcVersions.findIndex((v) => areLyricsEquivalent(v.syncedLyrics, activeLrc));
+      const isCurrentFlags = lrcVersions.map((_, i) => i === currentVersionIndex);
+
+      expect(currentVersionIndex).toBe(0);
+      expect(isCurrentFlags).toEqual([true, false, false]);
+      expect(isCurrentFlags.filter(Boolean).length).toBe(1);
+    });
+
+    it('should deduplicate candidates with equivalent syncedLyrics', () => {
+      const rawCandidates = [
+        { id: 1, trackName: '回レ!雪月花', syncedLyrics: '[00:01.00] せ～の\n[00:05.00] ほい' },
+        { id: 2, trackName: '回レ！雪月花', syncedLyrics: '[length: 03:55]\n[00:01.000] せ～の\r\n[00:05.000] ほい' },
+        { id: 3, trackName: '回レ!雪月花 (Alt)', syncedLyrics: '[00:02.00] 異なる歌詞\n[00:06.00] バージョン' }
+      ];
+
+      const deduped: any[] = [];
+      for (const item of rawCandidates) {
+        if (!deduped.some((existing) => areLyricsEquivalent(existing.syncedLyrics, item.syncedLyrics))) {
+          deduped.push(item);
+        }
+      }
+
+      expect(deduped.length).toBe(2);
+      expect(deduped[0].id).toBe(1);
+      expect(deduped[1].id).toBe(3);
+    });
   });
 });
