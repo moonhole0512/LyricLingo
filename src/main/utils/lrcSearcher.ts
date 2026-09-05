@@ -1,17 +1,6 @@
 import https from 'https';
-import fs from 'fs';
-import path from 'path';
 import { areLyricsEquivalent } from './lyricsParser';
-
-function appendDebugLog(message: string) {
-  try {
-    const logDir = path.resolve(process.cwd(), '_testcode/debug');
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-    const logFile = path.join(logDir, 'debug.log');
-    const timeStr = new Date().toISOString();
-    fs.appendFileSync(logFile, `[${timeStr}] ${message}\n`, 'utf8');
-  } catch {}
-}
+import { appendDebugLog } from './logger';
 
 export function logLrcDebug(category: string, ...args: any[]) {
   const msg = `[${category}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;

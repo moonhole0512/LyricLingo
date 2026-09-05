@@ -11,7 +11,18 @@ import { normalizeMediaData, mediaKey } from './utils/mediaIdentity'
 import { MediaControlWorker, type MediaAction } from './utils/mediaControl'
 import { searchLrcCandidates, isTitleArtistMatch } from './utils/lrcSearcher'
 import { postProcessJapaneseTokens } from './utils/japaneseLyricsDictionary'
+import { initLogger, logInfo, logError } from './utils/logger'
 import type { VocabularyInput } from '../shared/types'
+
+initLogger();
+
+process.on('uncaughtException', (err) => {
+  logError('MainProcess:UncaughtException', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logError('MainProcess:UnhandledRejection', reason instanceof Error ? reason : String(reason));
+});
 
 const Kuroshiro = require('kuroshiro').default;
 const KuromojiAnalyzer = require('kuroshiro-analyzer-kuromoji');
@@ -475,15 +486,21 @@ app.whenReady().then(() => {
          WHERE song_title = ? COLLATE NOCASE ${artistCondition}
          ORDER BY id DESC`,
         checkParams,
-        (_, rows: any[]) => {
+        (err, rows: any[]) => {
+          if (err) {
+            logError('IPC:update-original-lyrics', 'Query error:', err);
+            resolve({ success: false, error: err.message });
+            return;
+          }
           const matchingRow = rows?.find((r) => areLyricsEquivalent(r.original_lyrics, newLyrics));
           if (matchingRow && matchingRow.translated_lyrics) {
-            console.log(`\x1b[32m[Cache Hit]\x1b[0m Found existing translation in cache for selected version of "${cleanTitle}"`);
+            logInfo('Cache Hit', `Found existing translation in cache for selected version of "${cleanTitle}"`);
             const parsedModelInfo = matchingRow.translated_model_info ? JSON.parse(matchingRow.translated_model_info) : null;
             db.run(
               'UPDATE lyrics_cache SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
               [matchingRow.id],
-              () => {
+              (runErr) => {
+                if (runErr) logError('IPC:update-original-lyrics', 'Update timestamp error:', runErr);
                 broadcastMusicUpdate(newLyrics, matchingRow.translated_lyrics, matchingRow.translated_model, parsedModelInfo, cleanTitle, cleanArtist);
                 resolve({
                   success: true,
@@ -508,7 +525,8 @@ app.whenReady().then(() => {
             db.run(
               'INSERT INTO lyrics_cache (song_title, artist, original_lyrics) VALUES (?, ?, ?)',
               [cleanTitle, cleanArtist, newLyrics],
-              () => {
+              (runErr) => {
+                if (runErr) logError('IPC:update-original-lyrics', 'Insert error:', runErr);
                 broadcastMusicUpdate(newLyrics, null, null, null, cleanTitle, cleanArtist);
                 resolve({
                   success: true,
@@ -550,26 +568,34 @@ app.whenReady().then(() => {
       const artistCondition = artist ? 'AND artist = ? COLLATE NOCASE' : 'AND (artist IS NULL OR artist = "")';
       const checkParams = artist ? [title, artist] : [title];
 
-      db.all(`SELECT id, original_lyrics FROM lyrics_cache WHERE song_title = ? COLLATE NOCASE ${artistCondition}`, checkParams, (_, rows: any[]) => {
+      db.all(`SELECT id, original_lyrics FROM lyrics_cache WHERE song_title = ? COLLATE NOCASE ${artistCondition}`, checkParams, (err, rows: any[]) => {
+        if (err) {
+          logError('IPC:translate-lyrics', 'Query lyrics_cache error:', err);
+          return;
+        }
         const matchingRow = rows?.find((r) => areLyricsEquivalent(r.original_lyrics, originalLyrics));
         if (matchingRow) {
           db.run(`
             UPDATE lyrics_cache 
             SET original_lyrics = ?, translated_lyrics = ?, cover = ?, translated_model = ?, translated_model_info = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE id = ?
-          `, [originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr, matchingRow.id]);
+          `, [originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr, matchingRow.id], (runErr) => {
+            if (runErr) logError('IPC:translate-lyrics', 'Update lyrics_cache error:', runErr);
+          });
         } else {
           db.run(`
             INSERT INTO lyrics_cache (song_title, artist, original_lyrics, translated_lyrics, cover, translated_model, translated_model_info) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `, [title, artist || '', originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr]);
+          `, [title, artist || '', originalLyrics, translated, cover || null, translatedModel, translatedModelInfoStr], (runErr) => {
+            if (runErr) logError('IPC:translate-lyrics', 'Insert lyrics_cache error:', runErr);
+          });
         }
       });
 
       broadcastMusicUpdate(originalLyrics, translated, translatedModel, parsedModelInfo, title, artist);
       return { translated, model: translatedModel, modelInfo: parsedModelInfo };
     } catch (e: any) {
-      console.error('Translation error:', e);
+      logError('IPC:translate-lyrics', 'Translation error:', e);
       throw e;
     }
   });
